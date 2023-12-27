@@ -1,0 +1,16 @@
+{
+    "name": "jsadwayds/scopefilter",
+    "type": "library",
+    "autoload": {
+        "psr-4": {
+            "Jsadwayds\\Scopefilter\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Js-Adways",
+            "email": "it@js-adways.com.tw"
+        }
+    ],
+    "require": {}
+}
