@@ -3,7 +3,7 @@
     "type": "library",
     "autoload": {
         "psr-4": {
-            "Jsadways\\Scopefilter\\": "src/"
+            "Jsadways\\ScopeFilter\\": "src/"
         }
     },
     "authors": [
