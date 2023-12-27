@@ -1,5 +1,5 @@
 {
-    "name": "jsadwayds/scopefilter",
+    "name": "jsadways/scopefilter",
     "type": "library",
     "autoload": {
         "psr-4": {

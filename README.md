@@ -1,5 +1,5 @@
 ## Install
-composer require Jsadways/scopFilter
+composer require jsadways/scopFilter
 
 ## Edit Model
 use Jsadways\ScopeFilter\ScopeFilterTrait;
