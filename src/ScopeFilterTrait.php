@@ -29,12 +29,6 @@ trait ScopeFilterTrait
                 $field = implode('_', $splitKeys);
 
                 if($rule === 'or'){
-                    $query->where(function($q){
-                        $q->orWhere('');
-                        $q->orWhere('');
-                        $q->orWhere('');
-                        $q->orWhere('');
-                    });
                     $query = $query->where(function($sub_query)use($v){
                         foreach ($v as $sub_k=>$sub_v){
                             $splitKeys = explode('_', $sub_k);
