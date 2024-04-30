@@ -80,6 +80,8 @@ trait ScopeFilterTrait
                     'eq' => $query->orWhere($field, '=', $value),
                     'lt' => $query->orWhere($field, '<', $value),
                     'le' => $query->orWhere($field, '<=', $value),
+                    'nl' => $query->orWhereNull($field),
+                    'nnl' => $query->orWhereNotNull($field),
                     'dr' => (is_array($value)) ? $query->orWhereBetween($field, [$value[0], $value[1]]) : $query
                 };
             }else{
@@ -96,6 +98,8 @@ trait ScopeFilterTrait
                     'eq' => $query->where($field, '=', $value),
                     'lt' => $query->where($field, '<', $value),
                     'le' => $query->where($field, '<=', $value),
+                    'nl' => $query->whereNull($field),
+                    'nnl' => $query->whereNotNull($field),
                     'dr' => (is_array($value)) ? $query->whereBetween($field, [$value[0], $value[1]]) : $query
                 };
             }
