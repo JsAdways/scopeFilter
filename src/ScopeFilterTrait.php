@@ -82,6 +82,12 @@ trait ScopeFilterTrait
                     'le' => $query->orWhere($field, '<=', $value),
                     'nl' => $query->orWhereNull($field),
                     'nnl' => $query->orWhereNotNull($field),
+                    'cge' => $query->orWhereColumn($field, '>=', $value),
+                    'cgt' => $query->orWhereColumn($field, '>', $value),
+                    'cne' => $query->orWhereColumn($field, '!=', $value),
+                    'ceq' => $query->orWhereColumn($field, '=', $value),
+                    'clt' => $query->orWhereColumn($field, '<', $value),
+                    'cle' => $query->orWhereColumn($field, '<=', $value),
                     'dr' => (is_array($value)) ? $query->orWhereBetween($field, [$value[0], $value[1]]) : $query
                 };
             }else{
@@ -100,6 +106,12 @@ trait ScopeFilterTrait
                     'le' => $query->where($field, '<=', $value),
                     'nl' => $query->whereNull($field),
                     'nnl' => $query->whereNotNull($field),
+                    'cge' => $query->whereColumn($field, '>=', $value),
+                    'cgt' => $query->whereColumn($field, '>', $value),
+                    'cne' => $query->whereColumn($field, '!=', $value),
+                    'ceq' => $query->whereColumn($field, '=', $value),
+                    'clt' => $query->whereColumn($field, '<', $value),
+                    'cle' => $query->whereColumn($field, '<=', $value),
                     'dr' => (is_array($value)) ? $query->whereBetween($field, [$value[0], $value[1]]) : $query
                 };
             }
