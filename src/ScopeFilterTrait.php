@@ -12,10 +12,16 @@ use ReflectionMethod;
 
 trait ScopeFilterTrait
 {
+    private array $validKey = ["keyword","or","and","OrRelation_or","AndRelation_or","OrRelation_and","AndRelation_and"];
+    private Collection $tableColumns;
+    private Collection $fillableColumns;
+    private Collection $tableRelationColumns;
+    private Builder $query;
+
     /**
      * Scope filter
      *
-     * 查詢調整過濾 scoper
+     * 查詢調整過濾 scope
      *
      * @param Builder $query
      * @param array[
@@ -27,225 +33,297 @@ trait ScopeFilterTrait
     public function scopeFilter(Builder $query, array $filters): Builder|Exception
     {
         try {
-            $filters = $this->fitColumns(collect($filters));
-
-            foreach($filters as $filter){
-                if($filter['operator'] === 'or'){
-                    $query = $query->where(function($sub_query)use($filter){
-                        $sub_filters = $this->fitColumns(collect($filter['value']));
-                        foreach($sub_filters as $sub_filter){
-                            $sub_query = $this->conditionFilter($sub_query,$sub_filter,'or');
-                        }
-                    });
-
-                }
-                else if($filter['operator'] === '@'){
-                    $query = $query->orWhere(function($sub_query)use($filter){
-                        foreach($filter['value'] as $relation_name => $relation){
-                            $sub_filters = $this->fitColumns(collect($relation),$relation_name);
-                            foreach($sub_filters as $sub_filter){
-                                $sub_query = $this->conditionRelationFilter($sub_query,$sub_filter,$relation_name,'or');
-                            }
-                        }
-                    });
-
-                }
-                else{
-                    $query = $this->conditionFilter($query,$filter,'and');
-                }
+            $this->query = $query;
+            //存下column name
+            $this->tableColumns = collect(Schema::getColumnListing($this->getTable()));
+            $this->fillableColumns = collect($this->getFillable());
+            $relations = $this->_getAvailableRelations();
+            $this->tableRelationColumns = collect([]);
+            foreach($relations as $relation){
+                $this->tableRelationColumns->put($relation,collect(Schema::getColumnListing($this->{$relation}()->getRelated()->getTable())));
             }
 
-            return $query;
+            //檢查key是否在$validKey中
+            $validFilters = $this->_checkValidKey(collect($filters));
+            $validFilters->reduce(function ($result,$item,$key){
+                //實際呼叫_fitXXX
+                $this->{'_fit'.ucfirst($key)}($item);
+            },[]);
+
+            return $this->query;
         } catch (Exception $e) {
             throw new Exception("scopeFilter - {$e->getMessage()}");
         }
     }
 
     /**
-     * condition filter
+     * check valid key
      *
-     * 查詢調整過濾 scoper
-     *
-     * @param Builder $query
-     * @param array[
-     *     'name_k' => ['hello world']' ['{field}_{rule}' => ['value']]
-     * ]
-     * @param string $type
-     * @return Builder|Exception
-     * @throws Exception
-     */
-    protected function conditionFilter(Builder $query, array $filter, string $type): Builder|Exception
-    {
-        try {
-            $field = $filter['field'];
-            $operator = $filter['operator'];
-            $value = $filter['value'];
-            $function_append = ($type === 'or') ? 'or' : '';
-            $w = ($function_append === '') ? 'w' : 'W';
-
-            return match ($operator) {
-                'k' => $query->{$function_append.$w.'here'}($field, 'like', "%{$value}%"),
-                'ipp', 'ie' => $query->{$function_append.$w.'here'}($field, 'like', "%{$value}"),
-                'iel' => $query->{$function_append.$w.'here'}($field, 'ilike', "%{$value}"),
-                'in' => (is_array($value)) ? $query->{$function_append.$w.'hereIn'}($field, $value) : $query,
-                'nin' => (is_array($value)) ? $query->{$function_append.$w.'hereNotIn'}($field, $value) : $query,
-                'ge' => $query->{$function_append.$w.'here'}($field, '>=', $value),
-                'gt' => $query->{$function_append.$w.'here'}($field, '>', $value),
-                'ne' => $query->{$function_append.$w.'here'}($field, '!=', $value),
-                'eq' => $query->{$function_append.$w.'here'}($field, '=', $value),
-                'lt' => $query->{$function_append.$w.'here'}($field, '<', $value),
-                'le' => $query->{$function_append.$w.'here'}($field, '<=', $value),
-                'nl' => $query->{$function_append.$w.'hereNull'}($field),
-                'nnl' => $query->{$function_append.$w.'hereNotNull'}($field),
-                'cge' => $query->{$function_append.$w.'hereColumn'}($field, '>=', $value),
-                'cgt' => $query->{$function_append.$w.'hereColumn'}($field, '>', $value),
-                'cne' => $query->{$function_append.$w.'hereColumn'}($field, '!=', $value),
-                'ceq' => $query->{$function_append.$w.'hereColumn'}($field, '=', $value),
-                'clt' => $query->{$function_append.$w.'hereColumn'}($field, '<', $value),
-                'cle' => $query->{$function_append.$w.'hereColumn'}($field, '<=', $value),
-                'dr' => (is_array($value)) ? $query->{$function_append.$w.'hereBetween'}($field, [$value[0], $value[1]]) : $query
-            };
-        } catch (Exception $e) {
-            throw new Exception("scopeFilter - {$e->getMessage()}");
-        }
-    }
-
-    /**
-     * relation condition filter
-     *
-     * 查詢調整過濾 scoper
-     *
-     * @param Builder $query
-     * @param array[
-     *     'name_k' => ['hello world']' ['{field}_{rule}' => ['value']]
-     * ]
-     * @param string $relation
-     * @param string $type
-     * @return Builder|Exception
-     * @throws Exception
-     */
-    protected function conditionRelationFilter(Builder $query, array $filter, string $relation, string $type): Builder|Exception
-    {
-        try {
-            $field = $filter['field'];
-            $operator = $filter['operator'];
-            $value = $filter['value'];
-            $function_append = ($type === 'or') ? 'or' : '';
-            $w = ($function_append === '') ? 'w' : 'W';
-
-            return match ($operator) {
-                'k' => $query->{$function_append.$w.'hereRelation'}($relation,$field, 'like', "%{$value}%"),
-                'ipp', 'ie' => $query->{$function_append.$w.'hereRelation'}($relation,$field, 'like', "%{$value}"),
-                'iel' => $query->{$function_append.$w.'hereRelation'}($relation,$field, 'ilike', "%{$value}"),
-                'ge' => $query->{$function_append.$w.'hereRelation'}($relation,$field, '>=', $value),
-                'gt' => $query->{$function_append.$w.'hereRelation'}($relation,$field, '>', $value),
-                'ne' => $query->{$function_append.$w.'hereRelation'}($relation,$field, '!=', $value),
-                'eq' => $query->{$function_append.$w.'hereRelation'}($relation,$field, '=', $value),
-                'lt' => $query->{$function_append.$w.'hereRelation'}($relation,$field, '<', $value),
-                'le' => $query->{$function_append.$w.'hereRelation'}($relation,$field, '<=', $value)
-            };
-        } catch (Exception $e) {
-            throw new Exception("scopeFilter - {$e->getMessage()}");
-        }
-    }
-
-    /**
-     * fit columns
-     *
-     * 確認傳入columns是否正確
+     * 檢查傳入key直是否合法
      *
      * @param Collection $filters
-     * @return Collection {field:'file_name',operator:'>=,=,...','value':'condition value'}
+     * @return Collection
      */
-    protected function fitColumns(Collection $filters,String $relation = ''):Collection
+    protected function _checkValidKey(Collection $filters): Collection
     {
-        $columns = collect(Schema::getColumnListing($this->getTable()));
-        if($relation !== ''){
-            $columns = collect(Schema::getColumnListing($this->{$relation}()->getRelated()->getTable()));
-        }
+        return $filters->filter(function($item,$key){
+            return collect($this->validKey)->contains($key);
+        });
+    }
 
-        if($filters->has('keyword')){
-            $other_filter_keys = $filters->keys()->reject('keyword')->map(function ($item){return explode('_',$item)[0];});
-            $filters['keyword_or'] = $this->fitModelKeyword($filters['keyword'],$other_filter_keys);
-            $filters['relation_@'] = $this->fitRelationKeyword($filters['keyword']);
-        }
+    /**
+     * fit keyword
+     *
+     * 處理keyword關鍵字查詢語法
+     *
+     * @param string $value
+     * @return void
+     * @throws Exception
+     */
+    protected function _fitKeyword(string $value):void
+    {
+        $this->query->where(function($sub_query)use($value){
+            //組合mode中所有的fillable column
+            $this->fillableColumns->map(function ($column)use($sub_query,$value){
+                $filterData = [
+                    'field' => $column,
+                    'operator' => 'k',
+                    'value' => $value,
+                ];
+                $this->query = $this->_matchCondition($sub_query,$filterData,'or');
+            });
 
-        return collect($filters)->filter(function($value){
-            //移除空條件，數字不處理
-            return is_numeric($value) || !empty($value);
-        })->reduce(function ($result,$value,$key)use($columns){
-            //比對條件與資料表欄位名稱，移除非正確欄位名稱查詢條件
-            $element = explode('_',$key);
-            $operator = array_pop($element);
-            $field = implode('_',$element);
-            if($columns->contains($field) || $field === 'keyword' || $field === 'relation'){
-                $result->push([
-                    'field' => $field,
-                    'operator' => $operator,
-                    'value' => $value
-                ]);
+            $this->tableRelationColumns->map(function ($columns,$relation)use($value){
+                //組合所有relation中的fillable column
+                $relation_conditions = $columns->reduce(function ($result,$item)use($value){
+                    $result[$item.'_k'] = $value;
+
+                    return $result;
+                },[]);
+
+                $this->_fitOrRelation_or([$relation=>$relation_conditions]);
+            });
+        });
+    }
+
+    /**
+     * fit or
+     *
+     * 處理Or查詢語法
+     *
+     * @param array $value
+     * @return void
+     * @throws Exception
+     */
+    protected function _fitOr(array $value): void
+    {
+        $this->query->where(function($sub_query)use($value){
+            collect($value)->map(function ($item,$key)use($sub_query){
+                //check key fit table column name
+                $checkResult = $this->_checkColumnValid($this->tableColumns,$key,$item);
+                if($checkResult !== false){
+                    //if check pass, fit where condition
+                    $this->query = $this->_matchCondition($sub_query,$checkResult,'or');
+                }
+            });
+        });
+    }
+
+    /**
+     * fit and
+     *
+     * 處理And查詢語法
+     *
+     * @param array $value
+     * @return void
+     * @throws Exception
+     */
+    protected function _fitAnd(array $value): void
+    {
+        $this->query->where(function($sub_query)use($value){
+            collect($value)->map(function ($item,$key)use($sub_query){
+                //check key fit table column name
+                $checkResult = $this->_checkColumnValid($this->tableColumns,$key,$item);
+                if($checkResult !== false){
+                    //if check pass, fit where condition
+                    $this->query = $this->_matchCondition($sub_query,$checkResult,'and');
+                }
+            });
+        });
+    }
+
+    /**
+     * fit or relation or
+     *
+     * 處理orWhereHas查詢語法，內部條件為Or
+     *
+     * @param array $value
+     * @return void
+     * @throws Exception
+     */
+    protected function _fitOrRelation_or(array $value): void
+    {
+        $this->_fitRelation($value,'orWhereHas','or');
+    }
+
+    /**
+     * fit and relation or
+     *
+     * 處理whereHas查詢語法，內部條件為Or
+     *
+     * @param array $value
+     * @return void
+     * @throws Exception
+     */
+    protected function _fitAndRelation_or(array $value): void
+    {
+        $this->_fitRelation($value,'whereHas','or');
+    }
+
+    /**
+     * fit or relation and
+     *
+     * 處理orWhereHas查詢語法，內部條件為And
+     *
+     * @param array $value
+     * @return void
+     * @throws Exception
+     */
+    protected function _fitOrRelation_and(array $value): void
+    {
+        $this->_fitRelation($value,'orWhereHas','and');
+    }
+
+    /**
+     * fit and relation and
+     *
+     * 處理whereHas查詢語法，內部條件為and
+     *
+     * @param array $value
+     * @return void
+     * @throws Exception
+     */
+    protected function _fitAndRelation_and(array $value): void
+    {
+        $this->_fitRelation($value,'whereHas','and');
+    }
+
+    /**
+     * fit relation
+     *
+     * 實際處理relation相關語法
+     *
+     * @param array $value
+     * @param string $whereHas whereHas, orWhereHas
+     * @param string $logic and , or
+     * @return void
+     */
+    protected function _fitRelation(array $value,string $whereHas,string $logic):void
+    {
+        collect($value)->map(function ($item, $key)use($whereHas,$logic){
+            if ($this->_checkRelationValid($key)) {
+                $this->query->{$whereHas}($key,function(Builder $sub_query)use($key,$item,$logic){
+                    $sub_query->where(function(Builder $relation_query)use($key,$item,$logic){
+                        collect($item)->map(function ($relation_item, $relation_key) use ($key,$relation_query,$logic) {
+                            //check key fit table column name
+                            $checkResult = $this->_checkColumnValid($this->tableRelationColumns[$key], $relation_key, $relation_item);
+                            if ($checkResult !== false) {
+                                //if check pass, fit where condition
+                                $this->_matchCondition($relation_query, $checkResult, $logic);
+                            }
+                        });
+                    });
+                });
             }
-
-            return $result;
-        },collect([]));
+        });
     }
 
-
     /**
-     * fit model keyword
+     * check column valid
      *
-     * 組合此Model預設keyword搜尋條件
+     * 檢查查詢名稱是否為正確的欄位，正確回覆拆分後的field,operator,value
      *
-     * @param String $keyword
-     * @param Collection $other_filter_key
-     * @return array ['fillableColumn_K'=>keyword]
+     * @param Collection $columns
+     * @param string $key
+     * @param $value
+     * @return bool|array
      */
-    protected function fitModelKeyword(String $keyword,Collection $other_filter_key):array
+    protected function _checkColumnValid(Collection $columns, string $key,$value): bool|array
     {
-        $fillables = collect($this->getFillable());
-        $fillables = $fillables->diff($other_filter_key);
-        return $this->fitKeywordColumns($fillables,$keyword);
+        $element = explode('_',$key);
+        $operator = array_pop($element);
+        $field = implode('_',$element);
 
-    }
-
-
-    /**
-     * fit relation keyword
-     *
-     * 組合此Model Relation 預設keyword搜尋條件
-     *
-     * @param String $keyword
-     * @return array ['fillableColumn_K'=>keyword]
-     */
-    protected function fitRelationKeyword(String $keyword):array
-    {
-        $result = [];
-        $relations = $this->getAvailableRelations();
-        foreach($relations as $relation){
-            $relation_fillables = collect($this->{$relation}()->getRelated()->getFillable());
-            $relation_filters = $this->fitKeywordColumns($relation_fillables,$keyword);
-            $result[$relation] = $relation_filters;
+        if($columns->contains($field)){
+            return [
+                'field' => $field,
+                'operator' => $operator,
+                'value' => $value
+            ];
         }
 
-        return $result;
+        return false;
     }
 
     /**
-     * fit keyword columns
+     * check relation valid
      *
-     * 實際將欄位組合_k = keyword
+     * 檢查查詢relation名稱是否正確
      *
-     * @param Collection $fillables
-     * @param String $keyword
-     * @return array ['fillableColumn_K'=>keyword]
+     * @param string $relation
+     * @return bool
      */
-    protected function fitKeywordColumns(Collection $fillables,String $keyword): array
+    protected function _checkRelationValid(string $relation): bool
     {
-        return $fillables->reduce(function ($result_column,$fillable_column)use($keyword){
-            $result_column[$fillable_column.'_k'] = $keyword;
+        return $this->tableRelationColumns->keys()->contains($relation);
+    }
 
-            return $result_column;
-        },[]);
+    /**
+     * match condition
+     *
+     * 實際組合filter condition where條件
+     *
+     * @param Builder $query
+     * @param array $filter
+     * @param string $logic
+     * @return Builder|Exception
+     * @throws Exception
+     */
+    protected function _matchCondition(Builder $query, array $filter, string $logic): Builder|Exception
+    {
+        try {
+            $field = $filter['field'];
+            $operator = $filter['operator'];
+            $value = $filter['value'];
+            $whereString = ($logic === 'or') ? 'orWhere' : 'where';
+
+            return match ($operator) {
+                'k' => $query->{$whereString}($field, 'like', "%{$value}%"),
+                'ipp', 'ie' => $query->{$whereString}($field, 'like', "%{$value}"),
+                'iel' => $query->{$whereString}($field, 'ilike', "%{$value}"),
+                'in' => (is_array($value)) ? $query->{$whereString.'In'}($field, $value) : $query,
+                'nin' => (is_array($value)) ? $query->{$whereString.'NotIn'}($field, $value) : $query,
+                'ge' => $query->{$whereString}($field, '>=', $value),
+                'gt' => $query->{$whereString}($field, '>', $value),
+                'ne' => $query->{$whereString}($field, '!=', $value),
+                'eq' => $query->{$whereString}($field, '=', $value),
+                'lt' => $query->{$whereString}($field, '<', $value),
+                'le' => $query->{$whereString}($field, '<=', $value),
+                'nl' => $query->{$whereString.'Null'}($field),
+                'nnl' => $query->{$whereString.'NotNull'}($field),
+                'cge' => $query->{$whereString.'Column'}($field, '>=', $value),
+                'cgt' => $query->{$whereString.'Column'}($field, '>', $value),
+                'cne' => $query->{$whereString.'Column'}($field, '!=', $value),
+                'ceq' => $query->{$whereString.'Column'}($field, '=', $value),
+                'clt' => $query->{$whereString.'Column'}($field, '<', $value),
+                'cle' => $query->{$whereString.'Column'}($field, '<=', $value),
+                'dr' => (is_array($value)) ? $query->{$whereString.'Between'}($field, [$value[0], $value[1]]) : $query
+            };
+
+
+        } catch (Exception $e) {
+            throw new Exception("scopeFilter - {$e->getMessage()}");
+        }
     }
 
     /**
@@ -255,7 +333,7 @@ trait ScopeFilterTrait
      *
      * @return array ['name']
      */
-    protected function getAvailableRelations(): array
+    protected function _getAvailableRelations(): array
     {
         return array_keys(array_reduce(
             (new ReflectionClass(static::class))->getMethods(ReflectionMethod::IS_PUBLIC),
