@@ -1,9 +1,20 @@
 ## Install
 composer require jsadways/scopefilter
 
+## Use Keys
+* keyword
+* or
+* and
+* OrRelation_or
+* AndRelation_or
+* OrRelation_and
+* AndRelation_and
+* column : columnName_operator => value
+
 ## Edit Model
 use Jsadways\ScopeFilter\ScopeFilterTrait;
 
+```
 class User extends Model
 {
 
@@ -12,50 +23,22 @@ class User extends Model
     ...
 
 }
+```
 
-## Example 1 use custom column search keyword
+## Example
 
+```
 class UserController extends Controller
 {
     
     $filter = [
-        'status_eq' => 1,
-        'keyword_or' => [
-            'name_k' => 'johnny',
-            'name_en => 'johnny'
-        ],
-        'title_or' => [
-            'sub_title_k' => 'master',
-            'title_company_k' => 'master'
-        ]
-    ];
-    $user_list = User::filter($filter)->get();
-}
-
-## Example 2 use default fillable column and relation fillable column search keyword
-
-class UserController extends Controller
-{
-
-    $filter = [
-        'status_eq' => 1,
         'keyword' => 'johnny',
-        'title_or' => [
-            'sub_title_k' => 'master',
-            'title_company_k' => 'master'
-        ]
-    ];
-    $user_list = User::filter($filter)->get();
-}
-
-## Example 3 search relation table column
-
-class UserController extends Controller
-{
-
-    $filter = [
         'status_eq' => 1,
-        'relation_@' => [
+        'or' => [
+            'tel_k' => '0922',
+            'titke_k => 'super'
+        ],
+        'andRelation_or' => [
             'education' => [
                 'school_name_k' => 'National'
             ]
@@ -63,3 +46,4 @@ class UserController extends Controller
     ];
     $user_list = User::filter($filter)->get();
 }
+```
