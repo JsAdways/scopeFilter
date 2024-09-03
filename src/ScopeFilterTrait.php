@@ -334,6 +334,10 @@ trait ScopeFilterTrait
             $value = $filter['value'];
             $whereString = ($logic === 'or') ? 'orWhere' : 'where';
 
+            if(empty($value)){
+                return $query;
+            }
+
             return match ($operator) {
                 'k' => $query->{$whereString}($field, 'like', "%{$value}%"),
                 'ipp', 'ie' => $query->{$whereString}($field, 'like', "%{$value}"),
