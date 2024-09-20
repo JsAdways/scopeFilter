@@ -88,13 +88,13 @@ trait ScopeFilterTrait
             return $this->tableColumns->contains($field);
         });
 
-        if(!$filters->has('and')){
-            $filters['and'] = [];
+        if(!$validKey->has('and')){
+            $validKey['and'] = [];
         }
-        $filters['and'] = array_merge($filters['and'],$columnKey->toArray());
-        $filters->forget($columnKey->keys());
+        $validKey['and'] = array_merge($validKey['and'],$columnKey->toArray());
+        $validKey->forget($columnKey->keys());
 
-        return $filters;
+        return $validKey;
     }
 
     /**
@@ -258,10 +258,13 @@ trait ScopeFilterTrait
             $query = $this->query;
         }
         collect($conditionArray)->map(function ($conditions, $relationName)use($whereHas,$logic,$query){
-            if ($this->_checkRelationValid($relationName)) {
-                $query->{$whereHas}($relationName,function(Builder $sub_query)use($relationName,$conditions,$logic){
-                    $sub_query->where(function(Builder $relationQuery)use($relationName,$conditions,$logic){
-                        collect($conditions)->map(function ($relationValue, $relationColumn_condition) use ($relationName,$relationQuery,$logic) {
+            //remove empty conditions
+            $validConditions = $this->_removeEmptyCondition($conditions);
+            if ($this->_checkRelationValid($relationName) && count($validConditions) !== 0) {
+                //valid relation name and non-empty conditions
+                $query->{$whereHas}($relationName,function(Builder $sub_query)use($relationName,$validConditions,$logic){
+                    $sub_query->where(function(Builder $relationQuery)use($relationName,$validConditions,$logic){
+                        $validConditions->map(function ($relationValue, $relationColumn_condition) use ($relationName,$relationQuery,$logic) {
                             //check key fit table column name
                             $checkResult = $this->_checkColumnValid($this->tableRelationColumns[$relationName], $relationColumn_condition, $relationValue);
                             if ($checkResult !== false) {
@@ -413,5 +416,18 @@ trait ScopeFilterTrait
         ));
     }
 
+    /**
+     * remove empty condition
+     *
+     * 移除條件為空的欄位
+     *
+     * @param array $conditions
+     */
+    protected function _removeEmptyCondition(array $conditions):Collection
+    {
+        return collect($conditions)->filter(function ($condition){
+            return !empty($condition);
+        });
+    }
 
 }
