@@ -9,14 +9,15 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use ReflectionMethod;
+use Jsadways\ScopeFilter\Classes\Validation\Validation;
+use Jsadways\ScopeFilter\Classes\Validation\ValidateKey;
+use Jsadways\ScopeFilter\Classes\Validation\ValidateColumn;
 
 trait ScopeFilterTrait
 {
-    private array $validKey = ["keyword","or","and","OrRelation_or","AndRelation_or","OrRelation_and","AndRelation_and"];
-    private array $directSearchKey = ["or","and"];
-    private Collection $tableColumns;
-    private Collection $tableRelationColumns;
-    private Collection $keywordSearchColumns;
+    private Collection $tableColumns;//資料表所有欄位
+    private Collection $tableRelationColumns;//所有relation資料表欄位
+    private Collection $keywordSearchColumns;//Fillable欄位用於關鍵字搜尋
     private Builder $query;
 
     /**
@@ -37,22 +38,29 @@ trait ScopeFilterTrait
             $this->query = $query;
             $filters = collect($filters);
 
-            //存下column name
-            $this->tableColumns = collect(Schema::getColumnListing($this->getTable()));
-            $this->keywordSearchColumns = collect($this->getFillable());
-            $relations = $this->_getAvailableRelations();
-            $this->tableRelationColumns = collect([]);
-            foreach($relations as $relation){
-                $this->tableRelationColumns->put($relation,collect(Schema::getColumnListing($this->{$relation}()->getRelated()->getTable())));
-            }
+            //tableColumns, keywordSearchColumns 資料準備
+            $this->_dataInit();
 
-            //整理validKey
-            $validFilters = $this->_formatValidKey($filters);
+            //驗證傳入值
+            $keyValidator = new Validation(new ValidateKey());
+            $columnValidator = new Validation(new ValidateColumn($this->tableColumns));
+
+            $validKey = $keyValidator->extract($filters);
+            $validColumn = $columnValidator->extract($filters->diffKeys($validKey));
+
+            //合併直接搜尋欄位到and
+            if(!$validKey->has('and')){
+                $validKey['and'] = [];
+            }
+            $validKey['and'] = array_merge($validKey['and'],$validColumn->toArray());
+            $validFilters = $validKey->forget($validColumn->keys());
+
             //keyword挪動到最後才執行
             $keywordSearchCondition = $validFilters->pull('keyword');
             if(!empty($keywordSearchCondition)){
                 $validFilters->put('keyword',$keywordSearchCondition);
             }
+
             $validFilters->map(function ($conditionArray,$validKeyName){
                 //實際呼叫_fitXXX
                 /** @see _fitKeyword */ /** @see _fitOr */ /** @see _fitAnd */ /** @see _fitOrRelation_or */ /** @see _fitOrRelation_and */ /** @see _fitAndRelation_or */ /** @see _fitAndRelation_and */
@@ -65,36 +73,24 @@ trait ScopeFilterTrait
         }
     }
 
-
     /**
-     * format valid key
+     * prepare init data
      *
-     * 檢查傳入key是否合法以及合併直接搜尋欄位到and
+     * tableColumns, keywordSearchColumns 資料準備
      *
-     * @param Collection $filters
-     * @return Collection
+     * @return void
      */
-    protected function _formatValidKey(Collection $filters): Collection
+    protected function _dataInit(): void
     {
-        //符合定義key值
-        $validKey = $filters->filter(function($item,$key){
-            return collect($this->validKey)->contains($key);
-        });
-        //符合欄位名稱
-        $columnKey = $filters->diffKeys($validKey)->filter(function ($item,$key){
-            $element = explode('_',$key);
-            array_pop($element);
-            $field = implode('_',$element);
-            return $this->tableColumns->contains($field);
-        });
-
-        if(!$validKey->has('and')){
-            $validKey['and'] = [];
-        }
-        $validKey['and'] = array_merge($validKey['and'],$columnKey->toArray());
-        $validKey->forget($columnKey->keys());
-
-        return $validKey;
+        //資料表所有欄位
+        $this->tableColumns = collect(Schema::getColumnListing($this->getTable()));
+        //Fillable欄位作為關鍵字可用搜尋欄位
+        $this->keywordSearchColumns = collect($this->getFillable());
+        //找到所有的Relation Columns
+        $this->tableRelationColumns = Collect($this->_getAvailableRelations())->reduce(function($result,$relation){
+            $result->put($relation,collect(Schema::getColumnListing($this->{$relation}()->getRelated()->getTable())));
+            return $result;
+        },Collect([]));
     }
 
     /**
