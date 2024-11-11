@@ -12,6 +12,8 @@ use ReflectionMethod;
 use Jsadways\ScopeFilter\Classes\Validation\Validation;
 use Jsadways\ScopeFilter\Classes\Validation\ValidateKey;
 use Jsadways\ScopeFilter\Classes\Validation\ValidateColumn;
+use Jsadways\ScopeFilter\Classes\Validation\ValidateRelation;
+use Jsadways\ScopeFilter\Classes\Validation\ValidateEmpty;
 
 trait ScopeFilterTrait
 {
@@ -19,6 +21,10 @@ trait ScopeFilterTrait
     private Collection $tableRelationColumns;//所有relation資料表欄位
     private Collection $keywordSearchColumns;//Fillable欄位用於關鍵字搜尋
     private Builder $query;
+    private Validation $keyValidator;
+    private Validation $relationValidator;
+    private Validation $emptyValidator;
+    private Collection $columnValidator;
 
     /**
      * Scope filter
@@ -41,19 +47,18 @@ trait ScopeFilterTrait
             //tableColumns, keywordSearchColumns 資料準備
             $this->_dataInit();
 
+            //初始化驗證器
+            $this->_validatorInit();
             //驗證傳入值
-            $keyValidator = new Validation(new ValidateKey());
-            $columnValidator = new Validation(new ValidateColumn($this->tableColumns));
-
-            $validKey = $keyValidator->extract($filters);
-            $validColumn = $columnValidator->extract($filters->diffKeys($validKey));
+            $validKey = $this->keyValidator->extract($filters);
 
             //合併直接搜尋欄位到and
             if(!$validKey->has('and')){
                 $validKey['and'] = [];
             }
-            $validKey['and'] = array_merge($validKey['and'],$validColumn->toArray());
-            $validFilters = $validKey->forget($validColumn->keys());
+            $direct_columns = $filters->diffKeys($validKey);
+            $validKey['and'] = array_merge($validKey['and'],$direct_columns->toArray());
+            $validFilters = $validKey->forget($direct_columns->keys());
 
             //keyword挪動到最後才執行
             $keywordSearchCondition = $validFilters->pull('keyword');
@@ -91,6 +96,25 @@ trait ScopeFilterTrait
             $result->put($relation,collect(Schema::getColumnListing($this->{$relation}()->getRelated()->getTable())));
             return $result;
         },Collect([]));
+    }
+
+    /**
+     * prepare validators
+     *
+     * emptyValidator, keyValidator, relationValidator, columnValidator 資料準備
+     *
+     * @return void
+     */
+    protected function _validatorInit(): void
+    {
+        $this->emptyValidator = new Validation(new ValidateEmpty());//filter empty collections
+        $this->keyValidator = new Validation(new ValidateKey());//filter key validator
+        $this->relationValidator = new Validation(new ValidateRelation($this->tableRelationColumns));
+        $this->columnValidator = $this->tableRelationColumns->reduce(function ($result,$columns,$relation_name){
+            $result[$relation_name] = new Validation(new ValidateColumn($columns));
+            return $result;
+        },collect([]));//relation column validator
+        $this->columnValidator[0] = new Validation(new ValidateColumn($this->tableColumns));//table column validator
     }
 
     /**
@@ -171,10 +195,10 @@ trait ScopeFilterTrait
         $this->query = $this->query->where(function($sub_query)use($conditionArray,$logic){
             collect($conditionArray)->map(function ($value,$column_condition)use($sub_query,$logic){
                 //check key fit table column name
-                $formatted = $this->_checkColumnValid($this->tableColumns,$column_condition,$value);
-                if($formatted !== false){
+                $formatted = $this->columnValidator[0]->extract(collect([$column_condition=>$value]));
+                if($formatted->count() !== 0){
                     //if check pass, fit where condition
-                    $this->_matchCondition($sub_query,$formatted,$logic);
+                    $this->_matchCondition($sub_query,$formatted[0],$logic);
                 }
             });
         });
@@ -255,63 +279,25 @@ trait ScopeFilterTrait
         }
         collect($conditionArray)->map(function ($conditions, $relationName)use($whereHas,$logic,$query){
             //remove empty conditions
-            $validConditions = $this->_removeEmptyCondition($conditions);
-            if ($this->_checkRelationValid($relationName) && count($validConditions) !== 0) {
+            $nonEmptyConditions = $this->emptyValidator->extract(collect($conditions));
+            $validateResult = $this->relationValidator->extract(collect([$relationName]));
+
+            if ($validateResult->count() !== 0 && $nonEmptyConditions->count() !== 0) {
                 //valid relation name and non-empty conditions
-                $query->{$whereHas}($relationName,function(Builder $sub_query)use($relationName,$validConditions,$logic){
-                    $sub_query->where(function(Builder $relationQuery)use($relationName,$validConditions,$logic){
-                        $validConditions->map(function ($relationValue, $relationColumn_condition) use ($relationName,$relationQuery,$logic) {
+                $query->{$whereHas}($relationName,function(Builder $sub_query)use($relationName,$nonEmptyConditions,$logic){
+                    $sub_query->where(function(Builder $relationQuery)use($relationName,$nonEmptyConditions,$logic){
+                        $nonEmptyConditions->map(function ($relationValue, $relationColumn_condition) use ($relationName,$relationQuery,$logic) {
                             //check key fit table column name
-                            $checkResult = $this->_checkColumnValid($this->tableRelationColumns[$relationName], $relationColumn_condition, $relationValue);
-                            if ($checkResult !== false) {
+                            $formatted = $this->columnValidator[$relationName]->extract(collect([$relationColumn_condition=>$relationValue]));
+                            if ($formatted->count() !== 0) {
                                 //if check pass, fit where condition
-                                $this->_matchCondition($relationQuery, $checkResult, $logic);
+                                $this->_matchCondition($relationQuery, $formatted[0], $logic);
                             }
                         });
                     });
                 });
             }
         });
-    }
-
-    /**
-     * check column valid
-     *
-     * 檢查查詢名稱是否為正確的欄位，正確回覆拆分後的field,operator,value
-     *
-     * @param Collection $columns
-     * @param string $key
-     * @param Mixed $value
-     * @return bool|array
-     */
-    protected function _checkColumnValid(Collection $columns, string $key,Mixed $value): bool|array
-    {
-        $element = explode('_',$key);
-        $operator = array_pop($element);
-        $field = implode('_',$element);
-
-        if($columns->contains($field)){
-            return [
-                'field' => $field,
-                'operator' => $operator,
-                'value' => $value
-            ];
-        }
-
-        return false;
-    }
-
-    /**
-     * check relation valid
-     *
-     * 檢查查詢relation名稱是否正確
-     *
-     * @param string $relation
-     * @return bool
-     */
-    protected function _checkRelationValid(string $relation): bool
-    {
-        return $this->tableRelationColumns->keys()->contains($relation);
     }
 
     /**
@@ -411,19 +397,4 @@ trait ScopeFilterTrait
             }, []
         ));
     }
-
-    /**
-     * remove empty condition
-     *
-     * 移除條件為空的欄位
-     *
-     * @param array $conditions
-     */
-    protected function _removeEmptyCondition(array $conditions):Collection
-    {
-        return collect($conditions)->filter(function ($condition){
-            return !empty($condition);
-        });
-    }
-
 }

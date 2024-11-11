@@ -13,11 +13,19 @@ class ValidateColumn implements ValidateContract
     public function extract(Collection $filters): Collection
     {
         // TODO: Implement extract() method.
-        return $filters->filter(function ($item, $key){
+        return $filters->reduce(function ($result,$value,$key){
             $element = explode('_',$key);
-            array_pop($element);
+            $operator = array_pop($element);
             $field = implode('_',$element);
-            return $this->tableColumns->contains($field);
-        });
+
+            if($this->tableColumns->contains($field)){
+                $result->push([
+                    'field' => $field,
+                    'operator' => $operator,
+                    'value' => $value
+                ]);
+            }
+            return $result;
+        },collect([]));
     }
 }
