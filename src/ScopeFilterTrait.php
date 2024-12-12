@@ -18,8 +18,9 @@ use Jsadways\ScopeFilter\Classes\Validation\ValidateEmpty;
 trait ScopeFilterTrait
 {
     private Collection $tableColumns;//資料表所有欄位
-    private Collection $tableRelationColumns;//所有relation資料表欄位
-    private Collection $keywordSearchColumns;//Fillable欄位用於關鍵字搜尋
+    private Collection $keywordSearchRelationColumns;//relation資料表欄位，用於關鍵字搜尋
+    private Collection $keywordSearchColumns;//欄位用於關鍵字搜尋
+    private array $keywordSearchColumnTypes = ['varchar','longtext','text'];//用於關鍵字搜尋的所有欄位型態
     private Builder $query;
     private Validation $keyValidator;
     private Validation $relationValidator;
@@ -89,13 +90,10 @@ trait ScopeFilterTrait
     {
         //資料表所有欄位
         $this->tableColumns = collect(Schema::getColumnListing($this->getTable()));
-        //Fillable欄位作為關鍵字可用搜尋欄位
-        $this->keywordSearchColumns = collect($this->getFillable());
+        //關鍵字可用搜尋欄位
+        $this->keywordSearchColumns = $this->_getKeywordSearchColumns();
         //找到所有的Relation Columns
-        $this->tableRelationColumns = Collect($this->_getAvailableRelations())->reduce(function($result,$relation){
-            $result->put($relation,collect(Schema::getColumnListing($this->{$relation}()->getRelated()->getTable())));
-            return $result;
-        },Collect([]));
+        $this->keywordSearchRelationColumns = $this->_getKeywordSearchRelationColumns();
     }
 
     /**
@@ -109,8 +107,8 @@ trait ScopeFilterTrait
     {
         $this->emptyValidator = new Validation(new ValidateEmpty());//filter empty collections
         $this->keyValidator = new Validation(new ValidateKey());//filter key validator
-        $this->relationValidator = new Validation(new ValidateRelation($this->tableRelationColumns));
-        $this->columnValidator = $this->tableRelationColumns->reduce(function ($result,$columns,$relation_name){
+        $this->relationValidator = new Validation(new ValidateRelation($this->keywordSearchRelationColumns));
+        $this->columnValidator = $this->keywordSearchRelationColumns->reduce(function ($result,$columns,$relation_name){
             $result[$relation_name] = new Validation(new ValidateColumn($columns));
             return $result;
         },collect([]));//relation column validator
@@ -139,7 +137,7 @@ trait ScopeFilterTrait
                 $this->_matchCondition($sub_query,$filterData,'or');
             });
 
-            $this->tableRelationColumns->map(function ($columns,$relation)use($value,$sub_query){
+            $this->keywordSearchRelationColumns->map(function ($columns,$relation)use($value,$sub_query){
                 //組合所有relation中的 column
                 $relation_conditions = $columns->reduce(function ($result,$item)use($value){
                     $result[$item.'_k'] = $value;
@@ -270,6 +268,7 @@ trait ScopeFilterTrait
      * @param array $conditionArray
      * @param string $whereHas whereHas, orWhereHas
      * @param string $logic and , or
+     * @param Builder|null $query
      * @return void
      */
     protected function _fitRelation(array $conditionArray,string $whereHas,string $logic,Builder $query = null):void
@@ -396,5 +395,46 @@ trait ScopeFilterTrait
                 return $result;
             }, []
         ));
+    }
+
+    /**
+     * get columns for keyword search
+     *
+     * 找到Model中定義之fillable 並篩選出keyword可以搜尋的欄位類型
+     *
+     * @return Collection
+     */
+    protected function _getKeywordSearchColumns():Collection
+    {
+        return collect($this->getFillable())->filter(function ($column){
+            $type = Schema::getColumnType($this->getTable(),$column);
+            return in_array($type,$this->keywordSearchColumnTypes);
+        });
+    }
+
+    /**
+     * get relation columns for keyword search
+     *
+     * 找到relation中定義之所有欄位 並篩選出keyword可以搜尋的欄位類型
+     *
+     * @return Collection
+     */
+    protected function _getKeywordSearchRelationColumns():Collection
+    {
+        return Collect($this->_getAvailableRelations())->reduce(function($result,$relation){
+            $table_name = $this->{$relation}()->getRelated()->getTable();
+            $columns = Collect(Schema::getColumnListing($table_name));
+            $columns = $columns->reduce(function ($result_column,$column)use($table_name){
+                $type = Schema::getColumnType($table_name,$column);
+                if(in_array($type,$this->keywordSearchColumnTypes)){
+                    return $result_column->push($column);
+                }
+
+                return $result_column;
+            },Collect([]));
+
+            $result->put($relation,$columns);
+            return $result;
+        },Collect([]));
     }
 }
