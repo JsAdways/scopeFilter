@@ -2,7 +2,7 @@
 
 namespace Jsadways\ScopeFilter;
 
-use Exception;
+use App\Exceptions\ServiceException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
@@ -18,6 +18,7 @@ use Jsadways\ScopeFilter\Services\Validation\ValidateEmpty;
 use Jsadways\ScopeFilter\Services\Filter\FilterFormatDto;
 use Jsadways\ScopeFilter\Services\Filter\FilterGetTableDto;
 use Jsadways\ScopeFilter\Services\Filter\FilterService;
+use Throwable;
 
 trait ScopeFilterTrait
 {
@@ -41,10 +42,10 @@ trait ScopeFilterTrait
      * @param array[
      *     'name_k' => ['hello world']' ['{field}_{rule}' => ['value']]
      * ]
-     * @return Builder|Exception
-     * @throws Exception
+     * @return Builder|ServiceException
+     * @throws ServiceException
      */
-    public function scopeFilter(Builder $query, array $filters): Builder|Exception
+    public function scopeFilter(Builder $query, array $filters): Builder|ServiceException
     {
         try {
             $this->tableName = $this->getTable();
@@ -80,8 +81,8 @@ trait ScopeFilterTrait
             });
 
             return $this->query;
-        } catch (Exception $e) {
-            throw new Exception("scopeFilter - {$e->getMessage()}");
+        } catch (Throwable $e) {
+            throw new ServiceException("scopeFilter - {$e->getMessage()}");
         }
     }
 
@@ -124,7 +125,6 @@ trait ScopeFilterTrait
      *
      * @param string $value
      * @return void
-     * @throws Exception
      */
     protected function _fitKeyword(string $value):void
     {
@@ -159,7 +159,6 @@ trait ScopeFilterTrait
      *
      * @param array $conditionArray
      * @return void
-     * @throws Exception
      */
     protected function _fitOr(array $conditionArray): void
     {
@@ -173,7 +172,6 @@ trait ScopeFilterTrait
      *
      * @param array $conditionArray
      * @return void
-     * @throws Exception
      */
     protected function _fitAnd(array $conditionArray): void
     {
@@ -188,7 +186,6 @@ trait ScopeFilterTrait
      * @param array $conditionArray
      * @param string $logic
      * @return void
-     * @throws Exception
      */
     protected function _fitColumn(array $conditionArray,string $logic): void
     {
@@ -216,7 +213,6 @@ trait ScopeFilterTrait
      *
      * @param array $conditionArray
      * @return void
-     * @throws Exception
      */
     protected function _fitOrRelation_or(array $conditionArray): void
     {
@@ -230,7 +226,6 @@ trait ScopeFilterTrait
      *
      * @param array $conditionArray
      * @return void
-     * @throws Exception
      */
     protected function _fitAndRelation_or(array $conditionArray): void
     {
@@ -244,7 +239,6 @@ trait ScopeFilterTrait
      *
      * @param array $conditionArray
      * @return void
-     * @throws Exception
      */
     protected function _fitOrRelation_and(array $conditionArray): void
     {
@@ -258,7 +252,6 @@ trait ScopeFilterTrait
      *
      * @param array $conditionArray
      * @return void
-     * @throws Exception
      */
     protected function _fitAndRelation_and(array $conditionArray): void
     {
@@ -315,44 +308,37 @@ trait ScopeFilterTrait
      * @param Builder $query
      * @param array $filter
      * @param string $logic
-     * @return Builder|Exception
-     * @throws Exception
+     * @return Builder
      */
-    protected function _matchCondition(Builder $query, array $filter, string $logic): Builder|Exception
+    protected function _matchCondition(Builder $query, array $filter, string $logic): Builder
     {
-        try {
-            $field = $filter['field'];
-            $operator = $filter['operator'];
-            $value = $filter['value'];
-            $whereString = ($logic === 'or') ? 'orWhere' : 'where';
+        $field = $filter['field'];
+        $operator = $filter['operator'];
+        $value = $filter['value'];
+        $whereString = ($logic === 'or') ? 'orWhere' : 'where';
 
-            return match ($operator) {
-                'k' => $query->{$whereString}($field, 'like', "%{$value}%"),
-                'ipp', 'ie' => $query->{$whereString}($field, 'like', "%{$value}"),
-                'iel' => $query->{$whereString}($field, 'ilike', "%{$value}"),
-                'in' => (is_array($value)) ? $query->{$whereString.'In'}($field, $value) : $query,
-                'nin' => (is_array($value)) ? $query->{$whereString.'NotIn'}($field, $value) : $query,
-                'ge' => $query->{$whereString}($field, '>=', $value),
-                'gt' => $query->{$whereString}($field, '>', $value),
-                'ne' => $query->{$whereString}($field, '!=', $value),
-                'eq' => $query->{$whereString}($field, '=', $value),
-                'lt' => $query->{$whereString}($field, '<', $value),
-                'le' => $query->{$whereString}($field, '<=', $value),
-                'nl' => $query->{$whereString.'Null'}($field),
-                'nnl' => $query->{$whereString.'NotNull'}($field),
-                'cge' => $query->{$whereString.'Column'}($field, '>=', $value),
-                'cgt' => $query->{$whereString.'Column'}($field, '>', $value),
-                'cne' => $query->{$whereString.'Column'}($field, '!=', $value),
-                'ceq' => $query->{$whereString.'Column'}($field, '=', $value),
-                'clt' => $query->{$whereString.'Column'}($field, '<', $value),
-                'cle' => $query->{$whereString.'Column'}($field, '<=', $value),
-                'dr' => (is_array($value)) ? $query->{$whereString.'Between'}($field, [$value[0], $value[1]]) : $query
-            };
-
-
-        } catch (Exception $e) {
-            throw new Exception("scopeFilter - {$e->getMessage()}");
-        }
+        return match ($operator) {
+            'k' => $query->{$whereString}($field, 'like', "%{$value}%"),
+            'ipp', 'ie' => $query->{$whereString}($field, 'like', "%{$value}"),
+            'iel' => $query->{$whereString}($field, 'ilike', "%{$value}"),
+            'in' => (is_array($value)) ? $query->{$whereString.'In'}($field, $value) : $query,
+            'nin' => (is_array($value)) ? $query->{$whereString.'NotIn'}($field, $value) : $query,
+            'ge' => $query->{$whereString}($field, '>=', $value),
+            'gt' => $query->{$whereString}($field, '>', $value),
+            'ne' => $query->{$whereString}($field, '!=', $value),
+            'eq' => $query->{$whereString}($field, '=', $value),
+            'lt' => $query->{$whereString}($field, '<', $value),
+            'le' => $query->{$whereString}($field, '<=', $value),
+            'nl' => $query->{$whereString.'Null'}($field),
+            'nnl' => $query->{$whereString.'NotNull'}($field),
+            'cge' => $query->{$whereString.'Column'}($field, '>=', $value),
+            'cgt' => $query->{$whereString.'Column'}($field, '>', $value),
+            'cne' => $query->{$whereString.'Column'}($field, '!=', $value),
+            'ceq' => $query->{$whereString.'Column'}($field, '=', $value),
+            'clt' => $query->{$whereString.'Column'}($field, '<', $value),
+            'cle' => $query->{$whereString.'Column'}($field, '<=', $value),
+            'dr' => (is_array($value)) ? $query->{$whereString.'Between'}($field, [$value[0], $value[1]]) : $query
+        };
     }
 
     /**
