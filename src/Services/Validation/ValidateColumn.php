@@ -3,9 +3,9 @@ namespace Jsadways\ScopeFilter\Services\Validation;
 
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
-use Jsadways\ScopeFilter\Contracts\Validation\ValidateContract;
+use Jsadways\ScopeFilter\Core\Service\Validation\Contracts\ValidationContract;
 
-class ValidateColumn implements ValidateContract
+class ValidateColumn implements ValidationContract
 {
     public function extract(Collection $filters): Collection
     {

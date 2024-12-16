@@ -3,10 +3,10 @@ namespace Jsadways\ScopeFilter\Services\Validation;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Jsadways\ScopeFilter\Contracts\Validation\ValidateContract;
+use Jsadways\ScopeFilter\Core\Service\Validation\Contracts\ValidationContract;
 use Throwable;
 
-class ValidateRelation implements ValidateContract
+class ValidateRelation implements ValidationContract
 {
     public function __construct(
         protected Model $target
