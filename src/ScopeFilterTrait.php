@@ -9,14 +9,19 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use ReflectionMethod;
-use Jsadways\ScopeFilter\Classes\Validation\Validation;
-use Jsadways\ScopeFilter\Classes\Validation\ValidateKey;
-use Jsadways\ScopeFilter\Classes\Validation\ValidateColumn;
-use Jsadways\ScopeFilter\Classes\Validation\ValidateRelation;
-use Jsadways\ScopeFilter\Classes\Validation\ValidateEmpty;
+use Jsadways\ScopeFilter\Services\Validation\Validation;
+use Jsadways\ScopeFilter\Services\Validation\ValidateKey;
+use Jsadways\ScopeFilter\Services\Validation\ValidateColumn;
+use Jsadways\ScopeFilter\Services\Validation\ValidateRelation;
+use Jsadways\ScopeFilter\Services\Validation\ValidateEmpty;
+
+use Jsadways\ScopeFilter\Services\Filter\FilterFormatDto;
+use Jsadways\ScopeFilter\Services\Filter\FilterGetTableDto;
+use Jsadways\ScopeFilter\Services\Filter\FilterService;
 
 trait ScopeFilterTrait
 {
+    private string $tableName;//記錄資料表名稱
     private Collection $tableColumns;//資料表所有欄位
     private Collection $keywordSearchRelationColumns;//relation資料表欄位，用於關鍵字搜尋
     private Collection $keywordSearchColumns;//欄位用於關鍵字搜尋
@@ -25,7 +30,7 @@ trait ScopeFilterTrait
     private Validation $keyValidator;
     private Validation $relationValidator;
     private Validation $emptyValidator;
-    private Collection $columnValidator;
+    private Validation $columnValidator;
 
     /**
      * Scope filter
@@ -42,6 +47,7 @@ trait ScopeFilterTrait
     public function scopeFilter(Builder $query, array $filters): Builder|Exception
     {
         try {
+            $this->tableName = $this->getTable();
             $this->query = $query;
             $filters = collect($filters);
 
@@ -107,12 +113,8 @@ trait ScopeFilterTrait
     {
         $this->emptyValidator = new Validation(new ValidateEmpty());//filter empty collections
         $this->keyValidator = new Validation(new ValidateKey());//filter key validator
-        $this->relationValidator = new Validation(new ValidateRelation($this->keywordSearchRelationColumns));
-        $this->columnValidator = $this->keywordSearchRelationColumns->reduce(function ($result,$columns,$relation_name){
-            $result[$relation_name] = new Validation(new ValidateColumn($columns));
-            return $result;
-        },collect([]));//relation column validator
-        $this->columnValidator[0] = new Validation(new ValidateColumn($this->tableColumns));//table column validator
+        $this->relationValidator = new Validation(new ValidateRelation($this));
+        $this->columnValidator = new Validation(new ValidateColumn());
     }
 
     /**
@@ -190,14 +192,17 @@ trait ScopeFilterTrait
      */
     protected function _fitColumn(array $conditionArray,string $logic): void
     {
-        $this->query = $this->query->where(function($sub_query)use($conditionArray,$logic){
-            collect($conditionArray)->map(function ($value,$column_condition)use($sub_query,$logic){
-                //check key fit table column name
-                $formatted = $this->columnValidator[0]->extract(collect([$column_condition=>$value]));
-                if($formatted->count() !== 0){
-                    //if check pass, fit where condition
-                    $this->_matchCondition($sub_query,$formatted[0],$logic);
-                }
+        //remove empty conditions
+        $nonEmptyConditions = $this->emptyValidator->extract(collect($conditionArray));
+        $filterService = new FilterService();
+        //format filed data
+        $formattedField = $filterService->format(new FilterFormatDto($nonEmptyConditions));
+        //check key fit table column name
+        $validFields = $this->columnValidator->extract(collect([$this->tableName=>$formattedField]));
+
+        $this->query = $this->query->where(function($sub_query)use($validFields,$logic){
+            $validFields->map(function($value)use($sub_query,$logic){
+                $this->_matchCondition($sub_query,$value,$logic);
             });
         });
         //將欄位名稱從keyword可搜尋的欄位中移除
@@ -276,22 +281,25 @@ trait ScopeFilterTrait
         if(empty($query)){
             $query = $this->query;
         }
-        collect($conditionArray)->map(function ($conditions, $relationName)use($whereHas,$logic,$query){
+        $validRelation = $this->relationValidator->extract(collect($conditionArray));
+
+        $validRelation->map(function ($conditions, $relationName)use($whereHas,$logic,$query){
             //remove empty conditions
             $nonEmptyConditions = $this->emptyValidator->extract(collect($conditions));
-            $validateResult = $this->relationValidator->extract(collect([$relationName]));
 
-            if ($validateResult->count() !== 0 && $nonEmptyConditions->count() !== 0) {
-                //valid relation name and non-empty conditions
-                $query->{$whereHas}($relationName,function(Builder $sub_query)use($relationName,$nonEmptyConditions,$logic){
-                    $sub_query->where(function(Builder $relationQuery)use($relationName,$nonEmptyConditions,$logic){
-                        $nonEmptyConditions->map(function ($relationValue, $relationColumn_condition) use ($relationName,$relationQuery,$logic) {
-                            //check key fit table column name
-                            $formatted = $this->columnValidator[$relationName]->extract(collect([$relationColumn_condition=>$relationValue]));
-                            if ($formatted->count() !== 0) {
-                                //if check pass, fit where condition
-                                $this->_matchCondition($relationQuery, $formatted[0], $logic);
-                            }
+            if ($nonEmptyConditions->count() !== 0) {
+
+                $filterService = new FilterService();
+                //format filed data
+                $formattedField = $filterService->format(new FilterFormatDto($nonEmptyConditions));
+                //check key fit table column name
+                $relationTableName = $filterService->getTable(new FilterGetTableDto($this,$relationName));
+                $validFields = $this->columnValidator->extract(collect([$relationTableName=>$formattedField]));
+
+                $query->{$whereHas}($relationName,function(Builder $sub_query)use($relationName,$validFields,$logic){
+                    $sub_query->where(function(Builder $relationQuery)use($relationName,$validFields,$logic){
+                        $validFields->map(function($value)use($relationQuery,$logic){
+                            $this->_matchCondition($relationQuery,$value,$logic);
                         });
                     });
                 });
@@ -317,10 +325,6 @@ trait ScopeFilterTrait
             $operator = $filter['operator'];
             $value = $filter['value'];
             $whereString = ($logic === 'or') ? 'orWhere' : 'where';
-
-            if(empty($value)){
-                return $query;
-            }
 
             return match ($operator) {
                 'k' => $query->{$whereString}($field, 'like', "%{$value}%"),
