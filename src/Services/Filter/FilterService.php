@@ -5,6 +5,7 @@ namespace Jsadways\ScopeFilter\Services\Filter;
 use App\Exceptions\ServiceException;
 use Illuminate\Support\Collection;
 use Jsadways\ScopeFilter\Core\Service\Filter\Contracts\FilterContract;
+use MongoDB\Laravel\Eloquent\Model;
 
 class FilterService implements FilterContract
 {
@@ -28,9 +29,9 @@ class FilterService implements FilterContract
         },[]);
     }
 
-    public function getTable(FilterGetTableDto $data): string
+    public function getRelationModel(FilterGetRelationModelDto $data): mixed
     {
-        // TODO: Implement getTable() method.
+        // TODO: Implement getRelationModel() method.
         $fullRelationName = $data->get()['relation'];
         $modelClass = $data->get()['modelClass'];
 
@@ -40,6 +41,6 @@ class FilterService implements FilterContract
             $modelClass = $modelClass->{$relation}()->getRelated();
         }
 
-        return $modelClass->getTable();
+        return $modelClass;
     }
 }

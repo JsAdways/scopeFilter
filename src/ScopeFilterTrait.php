@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
+use Jsadways\ScopeFilter\Services\Filter\FilterGetRelationModelDto;
+use Jsadways\ScopeFilter\Services\Validation\ValidateDeriveMethod;
 use ReflectionClass;
 use ReflectionMethod;
 use Jsadways\ScopeFilter\Services\Validation\Validation;
@@ -16,8 +18,8 @@ use Jsadways\ScopeFilter\Services\Validation\ValidateRelation;
 use Jsadways\ScopeFilter\Services\Validation\ValidateEmpty;
 
 use Jsadways\ScopeFilter\Services\Filter\FilterFormatDto;
-use Jsadways\ScopeFilter\Services\Filter\FilterGetTableDto;
 use Jsadways\ScopeFilter\Services\Filter\FilterService;
+use Jsadways\ScopeFilter\Services\DeriveMethod\DeriveDto;
 use Throwable;
 
 trait ScopeFilterTrait
@@ -32,6 +34,7 @@ trait ScopeFilterTrait
     private Validation $relationValidator;
     private Validation $emptyValidator;
     private Validation $columnValidator;
+    private Validation $deriveMethodValidator;
 
     /**
      * Scope filter
@@ -81,7 +84,7 @@ trait ScopeFilterTrait
             });
 
             return $this->query;
-        } catch (Throwable $e) {
+        } catch (Throwable $e) {dd($e->getMessage());
             throw new ServiceException("scopeFilter - {$e->getMessage()}");
         }
     }
@@ -116,6 +119,7 @@ trait ScopeFilterTrait
         $this->keyValidator = new Validation(new ValidateKey());//filter key validator
         $this->relationValidator = new Validation(new ValidateRelation($this));
         $this->columnValidator = new Validation(new ValidateColumn());
+        $this->deriveMethodValidator = new Validation(new ValidateDeriveMethod($this));
     }
 
     /**
@@ -196,10 +200,15 @@ trait ScopeFilterTrait
         $formattedField = $filterService->format(new FilterFormatDto($nonEmptyConditions));
         //check key fit table column name
         $validFields = $this->columnValidator->extract(collect([$this->tableName=>$formattedField]));
+        //check key fit mode derive method
+        $validDeriveMethod = $this->deriveMethodValidator->extract(collect([0=>$formattedField]));
 
-        $this->query = $this->query->where(function($sub_query)use($validFields,$logic){
+        $this->query = $this->query->where(function($sub_query)use($validFields,$validDeriveMethod,$logic){
             $validFields->map(function($value)use($sub_query,$logic){
                 $this->_matchCondition($sub_query,$value,$logic);
+            });
+            $validDeriveMethod->map(function($value)use($sub_query,$logic){
+                $this->{$value['field']}(new DeriveDto($sub_query,$value['operator'],$logic,$value['value']));
             });
         });
         //將欄位名稱從keyword可搜尋的欄位中移除
@@ -286,13 +295,19 @@ trait ScopeFilterTrait
                 //format filed data
                 $formattedField = $filterService->format(new FilterFormatDto($nonEmptyConditions));
                 //check key fit table column name
-                $relationTableName = $filterService->getTable(new FilterGetTableDto($this,$relationName));
+                $relationModel = $filterService->getRelationModel(new FilterGetRelationModelDto($this,$relationName));
+                $relationTableName = $relationModel->getTable();
                 $validFields = $this->columnValidator->extract(collect([$relationTableName=>$formattedField]));
+                //check key fit mode derive method
+                $validDeriveMethod = $this->deriveMethodValidator->extract(collect([$relationName=>$formattedField]));
 
-                $query->{$whereHas}($relationName,function(Builder $sub_query)use($relationName,$validFields,$logic){
-                    $sub_query->where(function(Builder $relationQuery)use($relationName,$validFields,$logic){
+                $query->{$whereHas}($relationName,function(Builder $sub_query)use($relationModel,$validFields,$validDeriveMethod,$logic){
+                    $sub_query->where(function(Builder $relationQuery)use($relationModel,$validFields,$validDeriveMethod,$logic){
                         $validFields->map(function($value)use($relationQuery,$logic){
                             $this->_matchCondition($relationQuery,$value,$logic);
+                        });
+                        $validDeriveMethod->map(function($value)use($relationModel,$relationQuery,$logic){
+                            $relationModel->{$value['field']}(new DeriveDto($relationQuery,$value['operator'],$logic,$value['value']));
                         });
                     });
                 });
