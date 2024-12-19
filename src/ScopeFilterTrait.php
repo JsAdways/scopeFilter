@@ -84,7 +84,7 @@ trait ScopeFilterTrait
             });
 
             return $this->query;
-        } catch (Throwable $e) {dd($e->getMessage());
+        } catch (Throwable $e) {
             throw new ServiceException("scopeFilter - {$e->getMessage()}");
         }
     }
