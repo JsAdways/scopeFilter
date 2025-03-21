@@ -2,7 +2,7 @@
 
 namespace Jsadways\ScopeFilter;
 
-use App\Exceptions\ServiceException;
+use Jsadways\ScopeFilter\Exceptions\ServiceException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;

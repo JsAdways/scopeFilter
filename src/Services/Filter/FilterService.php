@@ -2,7 +2,7 @@
 
 namespace Jsadways\ScopeFilter\Services\Filter;
 
-use App\Exceptions\ServiceException;
+use Jsadways\ScopeFilter\Exceptions\ServiceException;
 use Illuminate\Support\Collection;
 use Jsadways\ScopeFilter\Core\Service\Filter\Contracts\FilterContract;
 use MongoDB\Laravel\Eloquent\Model;
