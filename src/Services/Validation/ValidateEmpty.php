@@ -10,7 +10,7 @@ class ValidateEmpty implements ValidationContract
     {
         // TODO: Implement extract() method.
         return $filters->filter(function ($condition){
-            return $condition!== '' && $condition !== null && count($condition) !== 0;
+            return $condition!== '' && $condition !== null && (is_array($condition) && count($condition) !== 0);
         });
     }
 }
