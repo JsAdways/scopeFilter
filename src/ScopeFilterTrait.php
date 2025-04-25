@@ -2,6 +2,7 @@
 
 namespace Jsadways\ScopeFilter;
 
+use Illuminate\Support\Str;
 use Jsadways\ScopeFilter\Exceptions\ServiceException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -411,7 +412,9 @@ trait ScopeFilterTrait
      */
     protected function _getKeywordSearchColumns():Collection
     {
-        return collect($this->getFillable())->filter(function ($column){
+        return collect($this->getFillable())->reject(function ($value){
+            return Str::contains($value,'.');
+        })->filter(function ($column){
             $type = Schema::getColumnType($this->getTable(),$column);
             return in_array($type,$this->keywordSearchColumnTypes);
         });
