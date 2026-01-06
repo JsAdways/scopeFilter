@@ -13,6 +13,13 @@ class ValidateColumn implements ValidationContract
         $tableName = $filters->keys()[0];
 
         return collect($filters[$tableName])->filter(function ($filter)use($tableName){
+            $connection = app('db')->connection();
+
+            if ($connection->getDriverName() === 'mongodb') {
+                // MongoDB: 直接返回 true，不檢查欄位
+                return true;
+            }
+
             return Schema::hasColumn($tableName,$filter['field']);
         });
     }

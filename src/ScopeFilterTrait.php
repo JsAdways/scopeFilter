@@ -21,10 +21,12 @@ use Jsadways\ScopeFilter\Services\Validation\ValidateEmpty;
 use Jsadways\ScopeFilter\Services\Filter\FilterFormatDto;
 use Jsadways\ScopeFilter\Services\Filter\FilterService;
 use Jsadways\ScopeFilter\Services\DeriveMethod\DeriveDto;
+use Jsadways\ScopeFilter\Traits\MongoDBSupport;
 use Throwable;
 
 trait ScopeFilterTrait
 {
+    use MongoDBSupport;
     private string $tableName;//記錄資料表名稱
     private Collection $tableColumns;//資料表所有欄位
     private Collection $keywordSearchRelationColumns;//relation資料表欄位，用於關鍵字搜尋
@@ -100,7 +102,7 @@ trait ScopeFilterTrait
     protected function _dataInit(): void
     {
         //資料表所有欄位
-        $this->tableColumns = collect(Schema::getColumnListing($this->getTable()));
+        $this->tableColumns = collect($this->_getColumnListing($this->getTable()));
         //關鍵字可用搜尋欄位
         $this->keywordSearchColumns = $this->_getKeywordSearchColumns();
         //找到所有的Relation Columns
@@ -415,7 +417,7 @@ trait ScopeFilterTrait
         return collect($this->getFillable())->reject(function ($value){
             return Str::contains($value,'.');
         })->filter(function ($column){
-            $type = Schema::getColumnType($this->getTable(),$column);
+            $type = $this->_getColumnType($this->getTable(), $column);
             return in_array($type,$this->keywordSearchColumnTypes);
         });
     }
@@ -430,10 +432,12 @@ trait ScopeFilterTrait
     protected function _getKeywordSearchRelationColumns():Collection
     {
         return Collect($this->_getAvailableRelations())->reduce(function($result,$relation){
-            $table_name = $this->{$relation}()->getRelated()->getTable();
-            $columns = Collect(Schema::getColumnListing($table_name));
+            $relationModel = $this->{$relation}()->getRelated();
+            $table_name = $relationModel->getTable();
+
+            $columns = Collect($this->_getRelationColumnListing($relationModel, $table_name));
             $columns = $columns->reduce(function ($result_column,$column)use($table_name){
-                $type = Schema::getColumnType($table_name,$column);
+                $type = $this->_getRelationColumnType($table_name, $column);
                 if(in_array($type,$this->keywordSearchColumnTypes)){
                     return $result_column->push($column);
                 }

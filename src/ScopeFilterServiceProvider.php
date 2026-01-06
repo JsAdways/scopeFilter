@@ -6,7 +6,6 @@ use Illuminate\Support\ServiceProvider;
 
 class ScopeFilterServiceProvider extends ServiceProvider
 {
-    use ScopeFilterTrait;
     /**
      * Register services.
      */
