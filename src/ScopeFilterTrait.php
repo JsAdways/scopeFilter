@@ -121,7 +121,7 @@ trait ScopeFilterTrait
         $this->emptyValidator = new Validation(new ValidateEmpty());//filter empty collections
         $this->keyValidator = new Validation(new ValidateKey());//filter key validator
         $this->relationValidator = new Validation(new ValidateRelation($this));
-        $this->columnValidator = new Validation(new ValidateColumn());
+        $this->columnValidator = new Validation(new ValidateColumn($this));
         $this->deriveMethodValidator = new Validation(new ValidateDeriveMethod($this));
     }
 
