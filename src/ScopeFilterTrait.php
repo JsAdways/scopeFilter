@@ -35,7 +35,7 @@ trait ScopeFilterTrait
     private Builder $query;
     private Validation $keyValidator;
     private Validation $relationValidator;
-    private Validation $emptyValidator;
+    //private Validation $emptyValidator;
     private Validation $columnValidator;
     private Validation $deriveMethodValidator;
 
@@ -118,7 +118,7 @@ trait ScopeFilterTrait
      */
     protected function _validatorInit(): void
     {
-        $this->emptyValidator = new Validation(new ValidateEmpty());//filter empty collections
+        //$this->emptyValidator = new Validation(new ValidateEmpty());//filter empty collections
         $this->keyValidator = new Validation(new ValidateKey());//filter key validator
         $this->relationValidator = new Validation(new ValidateRelation($this));
         $this->columnValidator = new Validation(new ValidateColumn($this));
@@ -197,7 +197,8 @@ trait ScopeFilterTrait
     protected function _fitColumn(array $conditionArray,string $logic): void
     {
         //remove empty conditions
-        $nonEmptyConditions = $this->emptyValidator->extract(collect($conditionArray));
+        //$nonEmptyConditions = $this->emptyValidator->extract(collect($conditionArray));
+        $nonEmptyConditions = collect($conditionArray);
         $filterService = new FilterService();
         //format filed data
         $formattedField = $filterService->format(new FilterFormatDto($nonEmptyConditions));
@@ -290,7 +291,8 @@ trait ScopeFilterTrait
 
         $validRelation->map(function ($conditions, $relationName)use($whereHas,$logic,$query){
             //remove empty conditions
-            $nonEmptyConditions = $this->emptyValidator->extract(collect($conditions));
+            //$nonEmptyConditions = $this->emptyValidator->extract(collect($conditions));
+            $nonEmptyConditions = collect($conditions);
 
             if ($nonEmptyConditions->count() !== 0) {
 
