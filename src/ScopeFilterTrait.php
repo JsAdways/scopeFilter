@@ -7,7 +7,6 @@ use Jsadways\ScopeFilter\Exceptions\ServiceException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Schema;
 use Jsadways\ScopeFilter\Services\Filter\FilterGetRelationModelDto;
 use Jsadways\ScopeFilter\Services\Validation\ValidateDeriveMethod;
 use ReflectionClass;
@@ -16,19 +15,20 @@ use Jsadways\ScopeFilter\Services\Validation\Validation;
 use Jsadways\ScopeFilter\Services\Validation\ValidateKey;
 use Jsadways\ScopeFilter\Services\Validation\ValidateColumn;
 use Jsadways\ScopeFilter\Services\Validation\ValidateRelation;
-use Jsadways\ScopeFilter\Services\Validation\ValidateEmpty;
 
 use Jsadways\ScopeFilter\Services\Filter\FilterFormatDto;
 use Jsadways\ScopeFilter\Services\Filter\FilterService;
 use Jsadways\ScopeFilter\Services\DeriveMethod\DeriveDto;
-use Jsadways\ScopeFilter\Traits\MongoDBSupport;
+use Jsadways\ScopeFilter\Traits\DBSupport;
 use Throwable;
 
 trait ScopeFilterTrait
 {
-    use MongoDBSupport;
+    use DBSupport;
     private string $tableName;//記錄資料表名稱
     private Collection $tableColumns;//資料表所有欄位
+    private Collection $relationTables;//relation名稱 → table名稱 對照
+    private Collection $relationTableColumns;//relation table名稱 → [COLUMN_NAME => DATA_TYPE] 對照
     private Collection $keywordSearchRelationColumns;//relation資料表欄位，用於關鍵字搜尋
     private Collection $keywordSearchColumns;//欄位用於關鍵字搜尋
     private array $keywordSearchColumnTypes = ['varchar','longtext','text'];//用於關鍵字搜尋的所有欄位型態
@@ -103,6 +103,13 @@ trait ScopeFilterTrait
     {
         //資料表所有欄位
         $this->tableColumns = collect($this->_getColumnListing($this->getTable()));
+        //relation名稱 → table名稱 對照
+        $this->relationTables = collect($this->_getAvailableRelations())
+            ->mapWithKeys(fn($relation) => [$relation => $this->{$relation}()->getRelated()->getTable()]);
+        //relation table 所有欄位 (去重避免同表重複查詢)
+        $this->relationTableColumns = $this->relationTables
+            ->unique()
+            ->mapWithKeys(fn($tableName) => [$tableName => collect($this->_getColumnListing($tableName))]);
         //關鍵字可用搜尋欄位
         $this->keywordSearchColumns = $this->_getKeywordSearchColumns();
         //找到所有的Relation Columns
@@ -416,12 +423,9 @@ trait ScopeFilterTrait
      */
     protected function _getKeywordSearchColumns():Collection
     {
-        return collect($this->getFillable())->reject(function ($value){
-            return Str::contains($value,'.');
-        })->filter(function ($column){
-            $type = $this->_getColumnType($this->getTable(), $column);
-            return in_array($type,$this->keywordSearchColumnTypes);
-        });
+        return collect($this->getFillable())
+            ->reject(fn($value) => Str::contains($value, '.'))
+            ->filter(fn($column) => in_array($this->tableColumns->get($column), $this->keywordSearchColumnTypes));
     }
 
     /**
@@ -433,22 +437,10 @@ trait ScopeFilterTrait
      */
     protected function _getKeywordSearchRelationColumns():Collection
     {
-        return Collect($this->_getAvailableRelations())->reduce(function($result,$relation){
-            $relationModel = $this->{$relation}()->getRelated();
-            $table_name = $relationModel->getTable();
-
-            $columns = Collect($this->_getRelationColumnListing($relationModel, $table_name));
-            $columns = $columns->reduce(function ($result_column,$column)use($table_name){
-                $type = $this->_getRelationColumnType($table_name, $column);
-                if(in_array($type,$this->keywordSearchColumnTypes)){
-                    return $result_column->push($column);
-                }
-
-                return $result_column;
-            },Collect([]));
-
-            $result->put($relation,$columns);
-            return $result;
-        },Collect([]));
+        return $this->relationTables->map(function ($tableName) {
+            return $this->relationTableColumns[$tableName]
+                ->filter(fn($type) => in_array($type, $this->keywordSearchColumnTypes))
+                ->keys();
+        });
     }
 }
